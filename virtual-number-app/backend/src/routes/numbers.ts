@@ -1,0 +1,103 @@
+import { randomUUID } from "node:crypto";
+import { Router } from "express";
+import { z } from "zod";
+import { userIdOf } from "../auth.js";
+import { now } from "../db.js";
+import type { Deps } from "../app.js";
+import { ownedNumber, publicNumber, type NumberRow } from "../repo.js";
+import { HttpError, e164, handle } from "../validation.js";
+
+const search = z.object({
+  country: z.string().regex(/^[A-Z]{2}$/, "country must be an ISO code like US"),
+  areaCode: z.string().regex(/^\d{2,5}$/).optional(),
+  contains: z.string().regex(/^\d{1,10}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(30).default(20),
+});
+
+const purchase = z.object({
+  e164,
+  country: z.string().regex(/^[A-Z]{2}$/),
+  locality: z.string().max(100).nullable().optional(),
+  sms: z.boolean().default(true),
+  voice: z.boolean().default(true),
+  label: z.string().trim().max(40).optional(),
+});
+
+export function numberRoutes({ db, config, telephony }: Deps) {
+  const r = Router();
+
+  r.get(
+    "/available",
+    handle(async (req, res) => {
+      res.json(await telephony.searchAvailable(search.parse(req.query)));
+    }),
+  );
+
+  r.get(
+    "/",
+    handle((req, res) => {
+      const rows = db
+        .prepare("SELECT * FROM numbers WHERE user_id = ? AND released_at IS NULL ORDER BY created_at")
+        .all(userIdOf(req)) as unknown as NumberRow[];
+      res.json(rows.map(publicNumber));
+    }),
+  );
+
+  r.post(
+    "/",
+    handle(async (req, res) => {
+      const userId = userIdOf(req);
+      const p = purchase.parse(req.body);
+      const { count } = db
+        .prepare("SELECT COUNT(*) AS count FROM numbers WHERE user_id = ? AND released_at IS NULL")
+        .get(userId) as { count: number };
+      if (count >= config.maxNumbersPerUser) {
+        throw new HttpError(403, `You can have up to ${config.maxNumbersPerUser} numbers`);
+      }
+      const provisioned = await telephony.purchase(p.e164, {
+        sms: `${config.publicBaseUrl}/webhooks/sms`,
+        voice: `${config.publicBaseUrl}/webhooks/voice`,
+      });
+      const id = randomUUID();
+      db.prepare(
+        `INSERT INTO numbers (id, user_id, provider_sid, e164, country, locality, label, sms, voice, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        userId,
+        provisioned.providerSid,
+        provisioned.e164,
+        p.country,
+        p.locality ?? null,
+        p.label ?? null,
+        p.sms ? 1 : 0,
+        p.voice ? 1 : 0,
+        now(),
+      );
+      res.status(201).json(publicNumber(ownedNumber(db, userId, id)));
+    }),
+  );
+
+  r.patch(
+    "/:id",
+    handle((req, res) => {
+      const userId = userIdOf(req);
+      const n = ownedNumber(db, userId, req.params.id!);
+      const { label } = z.object({ label: z.string().trim().max(40).nullable() }).parse(req.body);
+      db.prepare("UPDATE numbers SET label = ? WHERE id = ?").run(label || null, n.id);
+      res.json(publicNumber(ownedNumber(db, userId, n.id)));
+    }),
+  );
+
+  r.delete(
+    "/:id",
+    handle(async (req, res) => {
+      const n = ownedNumber(db, userIdOf(req), req.params.id!);
+      await telephony.release(n.provider_sid);
+      db.prepare("UPDATE numbers SET released_at = ? WHERE id = ?").run(now(), n.id);
+      res.status(204).end();
+    }),
+  );
+
+  return r;
+}

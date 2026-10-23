@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "SecondLine",
+    "slug": "secondline",
+    "scheme": "secondline",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.example.secondline",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.example.secondline",
+      "permissions": ["POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-notifications", { "color": "#4F46E5" }],
+      "expo-audio"
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}
