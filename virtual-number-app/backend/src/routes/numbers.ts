@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { userIdOf } from "../auth.js";
+import { numberWebhooks } from "../config.js";
 import { now } from "../db.js";
 import type { Deps } from "../app.js";
 import { ownedNumber, publicNumber, type NumberRow } from "../repo.js";
@@ -51,10 +52,7 @@ export function numberRoutes(deps: Deps) {
       const userId = userIdOf(req);
       const p = purchase.parse(req.body);
       assertAllowed(deps, userId, "number");
-      const provisioned = await telephony.purchase(p.e164, {
-        sms: `${config.publicBaseUrl}/webhooks/sms`,
-        voice: `${config.publicBaseUrl}/webhooks/voice`,
-      });
+      const provisioned = await telephony.purchase(p.e164, numberWebhooks(config));
       const id = randomUUID();
       db.prepare(
         `INSERT INTO numbers (id, user_id, provider_sid, e164, country, locality, label, sms, voice, created_at)

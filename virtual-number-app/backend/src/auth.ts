@@ -55,11 +55,12 @@ declare module "express-serve-static-core" {
   }
 }
 
-export function requireAuth(secret: string) {
+/** Tokens are stateless, so `userExists` rejects tokens of deleted accounts. */
+export function requireAuth(secret: string, userExists: (userId: string) => boolean) {
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.header("authorization") ?? "";
     const userId = header.startsWith("Bearer ") ? verifyToken(header.slice(7), secret) : null;
-    if (!userId) {
+    if (!userId || !userExists(userId)) {
       res.status(401).json({ error: "unauthorized" });
       return;
     }

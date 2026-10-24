@@ -1,7 +1,21 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { ProviderError, type TelephonyProvider } from "./types.js";
 
-const API = "https://api.twilio.com/2010-04-01";
+const TWILIO_API = "https://api.twilio.com/2010-04-01";
+
+export interface TwilioAccount {
+  sid: string;
+  friendly_name: string;
+  status: string;
+  type: "Trial" | "Full";
+}
+
+export interface TwilioIncomingNumber {
+  sid: string;
+  phone_number: string;
+  sms_url: string;
+  voice_url: string;
+}
 
 interface TwilioAvailable {
   phone_number: string;
@@ -18,12 +32,14 @@ export class TwilioProvider implements TelephonyProvider {
   constructor(
     private readonly accountSid: string,
     private readonly authToken: string,
+    /** Overridable for tests against a local fake. */
+    private readonly api = TWILIO_API,
   ) {
     this.auth = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
   }
 
   private async request<T>(method: string, path: string, form?: Record<string, string>): Promise<T> {
-    const res = await fetch(`${API}/Accounts/${this.accountSid}${path}`, {
+    const res = await fetch(`${this.api}/Accounts/${this.accountSid}${path}`, {
       method,
       headers: {
         authorization: this.auth,
@@ -69,6 +85,28 @@ export class TwilioProvider implements TelephonyProvider {
     return { providerSid: n.sid, e164: n.phone_number };
   }
 
+  /** Account details; also the cheapest way to prove the credentials work. */
+  account() {
+    return this.request<TwilioAccount>("GET", ".json");
+  }
+
+  async listNumbers(): Promise<TwilioIncomingNumber[]> {
+    const page = await this.request<{ incoming_phone_numbers: TwilioIncomingNumber[] }>(
+      "GET",
+      "/IncomingPhoneNumbers.json?PageSize=1000",
+    );
+    return page.incoming_phone_numbers;
+  }
+
+  async setWebhooks(providerSid: string, webhooks: { sms: string; voice: string }) {
+    await this.request("POST", `/IncomingPhoneNumbers/${encodeURIComponent(providerSid)}.json`, {
+      SmsUrl: webhooks.sms,
+      SmsMethod: "POST",
+      VoiceUrl: webhooks.voice,
+      VoiceMethod: "POST",
+    });
+  }
+
   async release(providerSid: string) {
     await this.request("DELETE", `/IncomingPhoneNumbers/${encodeURIComponent(providerSid)}.json`);
   }
@@ -106,7 +144,7 @@ export class TwilioProvider implements TelephonyProvider {
   }
 
   async fetchRecording(url: string) {
-    if (!url.startsWith(API)) throw new ProviderError("Unexpected recording host", 400);
+    if (!url.startsWith(this.api)) throw new ProviderError("Unexpected recording host", 400);
     return fetch(`${url}.mp3`, { headers: { authorization: this.auth } });
   }
 }

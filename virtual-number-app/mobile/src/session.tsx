@@ -11,6 +11,8 @@ interface SessionValue {
   user: User | null;
   signIn: (mode: "login" | "register", email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Deletes the account on the server, then clears this device. */
+  deleteAccount: (password: string) => Promise<void>;
   setUser: (user: User) => void;
 }
 
@@ -44,6 +46,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
   }, [signOut]);
 
+  const deleteAccount = useCallback(async (password: string) => {
+    await api.deleteAccount(password);
+    configureApi({ token: null });
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    setUser(null);
+  }, []);
+
   const signIn = useCallback(async (mode: "login" | "register", email: string, password: string) => {
     const session = mode === "login" ? await api.login(email, password) : await api.register(email, password);
     await SecureStore.setItemAsync(TOKEN_KEY, session.token);
@@ -52,7 +61,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void registerForPush();
   }, []);
 
-  const value = useMemo(() => ({ ready, user, signIn, signOut, setUser }), [ready, user, signIn, signOut]);
+  const value = useMemo(
+    () => ({ ready, user, signIn, signOut, deleteAccount, setUser }),
+    [ready, user, signIn, signOut, deleteAccount],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

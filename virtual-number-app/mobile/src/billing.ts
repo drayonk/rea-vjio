@@ -16,6 +16,9 @@ export const billingAvailable = Boolean(apiKey) && Platform.OS !== "web";
 
 let ready: Promise<void> | null = null;
 
+/** Lets a build bypass payment. Always null for real builds; the demo build replaces this module. */
+export const skipPaywall: { label: string; run: () => Promise<void> } | null = null;
+
 /** Ties store purchases to our user id, which the backend uses to look them up. */
 export function identify(userId: string): Promise<void> {
   if (!billingAvailable) return Promise.resolve();

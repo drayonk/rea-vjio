@@ -31,7 +31,7 @@ export default function Paywall() {
   const [plan, setPlan] = useState<"premium" | "pro">(subscription?.plan === "premium" ? "pro" : "premium");
   const [selected, setSelected] = useState<billing.PaywallOption | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"buy" | "restore" | null>(null);
+  const [busy, setBusy] = useState<"buy" | "restore" | "skip" | null>(null);
 
   useEffect(() => {
     if (!billing.billingAvailable) {
@@ -83,6 +83,17 @@ export default function Paywall() {
       else setError("No active subscription was found for this store account.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const skip = async () => {
+    if (!billing.skipPaywall) return;
+    setBusy("skip");
+    try {
+      await billing.skipPaywall.run();
+      if (await waitForPlan(sync)) router.back();
     } finally {
       setBusy(null);
     }
@@ -191,6 +202,7 @@ export default function Paywall() {
         </Text>
         <View style={{ flexDirection: "row", justifyContent: "center", gap: spacing(5) }}>
           <Link title="Restore purchases" onPress={restore} disabled={busy !== null} />
+          {billing.skipPaywall && <Link title={billing.skipPaywall.label} onPress={skip} disabled={busy !== null} />}
           {TERMS_URL && <Link title="Terms" onPress={() => void Linking.openURL(TERMS_URL)} />}
           {PRIVACY_URL && <Link title="Privacy" onPress={() => void Linking.openURL(PRIVACY_URL)} />}
         </View>

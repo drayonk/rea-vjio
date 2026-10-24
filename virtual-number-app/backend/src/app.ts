@@ -4,6 +4,7 @@ import type { BillingProvider } from "./billing/types.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db.js";
 import type { PushSender } from "./push.js";
+import { getUser } from "./repo.js";
 import { authRoutes } from "./routes/auth.js";
 import { billingWebhookRoutes } from "./routes/billing-webhook.js";
 import { callRoutes } from "./routes/calls.js";
@@ -36,7 +37,7 @@ export function createApp(deps: Deps) {
   const api = express.Router();
   api.use(express.json({ limit: "64kb" }));
   api.use("/auth", authRoutes(deps));
-  api.use(requireAuth(deps.config.authSecret));
+  api.use(requireAuth(deps.config.authSecret, (id) => getUser(deps.db, id) !== undefined));
   api.use("/me", meRoutes(deps));
   api.use("/subscription", subscriptionRoutes(deps));
   api.use("/numbers", numberRoutes(deps));

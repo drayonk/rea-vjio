@@ -19,6 +19,12 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return value;
 }
 
+/** Where the carrier must send a number's inbound texts and calls. */
+export const numberWebhooks = (config: Pick<Config, "publicBaseUrl">) => ({
+  sms: `${config.publicBaseUrl}/webhooks/sms`,
+  voice: `${config.publicBaseUrl}/webhooks/voice`,
+});
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const provider = env.TELEPHONY_PROVIDER ?? "mock";
   if (provider !== "mock" && provider !== "twilio") {

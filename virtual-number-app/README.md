@@ -19,6 +19,8 @@ dating, travel, business lines, and sign-ups.
 | Turn calls off per number (texts-only number)                    | ✅     |
 | Identity protection: real number never exposed, call screening   | ✅     |
 | Subscriptions (Premium / Pro) with free trial and paywall        | ✅     |
+| In-app account deletion (App Store / Google Play requirement)    | ✅     |
+| Clickable web demo with simulated data and a skippable paywall   | ✅     |
 
 ## Architecture
 
@@ -177,11 +179,22 @@ curl -X POST localhost:4000/webhooks/voice \
 1. Create a Twilio account and upgrade it from trial, since trial accounts can
    only reach verified numbers.
 2. In `backend/.env`, set `TELEPHONY_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`,
-   and `TWILIO_AUTH_TOKEN`.
+   and `TWILIO_AUTH_TOKEN` (Twilio Console > Account info).
 3. Set `PUBLIC_BASE_URL` to the backend's public HTTPS URL. Twilio sends
    webhooks there, and signature checks need the exact URL. In development, use
    a tunnel such as `ngrok http 4000`.
-4. **Compliance (required before real traffic):**
+4. Start the server, then check the connection:
+
+   ```bash
+   cd backend
+   npm run twilio:check          # verifies credentials, account type, public URL, number webhooks
+   npm run twilio:check -- --fix # repoints SecondLine's numbers at PUBLIC_BASE_URL
+   ```
+
+   Run it again whenever `PUBLIC_BASE_URL` changes, for example a new ngrok
+   address. Numbers in the Twilio account that SecondLine doesn't own are
+   listed but never changed.
+5. **Compliance (required before real traffic):**
    - **US SMS:** messages from local (10DLC) numbers must be registered with
      A2P 10DLC (brand + campaign) or carriers will filter them. Toll-free
      numbers need toll-free verification.
@@ -190,7 +203,7 @@ curl -X POST localhost:4000/webhooks/voice \
      fail with a carrier error until it is approved.
    - Publish terms of service and an acceptable-use policy that prohibit spam,
      harassment, and fraud.
-5. Push notifications: in `mobile/`, run `npx eas init` to get a project ID.
+6. Push notifications: in `mobile/`, run `npx eas init` to get a project ID.
    The app registers its Expo push token automatically after sign-in. Push
    only works on physical devices.
 
@@ -207,9 +220,13 @@ npx eas submit
 - The app does **not** request SMS, call-log, or contacts permissions.
   Google Play restricts those permissions heavily, and the server-side design
   doesn't need them.
-- Both stores require an in-app **account deletion** option for apps with
-  sign-up. It's listed in the roadmap below and must be added before
-  submission.
+- Account deletion, which both stores require, is in Settings > Delete
+  account. It asks for the password, releases the user's numbers at the
+  carrier, deletes all of their texts, calls and settings, and erases their
+  RevenueCat customer record. A store subscription can only be cancelled by
+  the user, so the screen tells paying users to cancel it first and links to
+  their store's subscription page. Give the stores the deletion steps when
+  they ask.
 
 ## Production checklist
 
@@ -222,8 +239,29 @@ npx eas submit
 - [ ] Verify the user's real phone with an OTP (e.g. Twilio Verify) before it
       can receive forwarded or bridged calls.
 - [ ] Set carrier spend alerts and usage triggers in the Twilio console.
-- [ ] Add in-app account deletion (a store requirement) and a privacy policy
-      URL.
+- [ ] Publish a privacy policy URL (both stores require one).
+
+## Web demo
+
+`mobile/` can build a clickable web demo of the real app that needs no
+backend, carrier, or store:
+
+```bash
+cd mobile
+npm run build:demo     # writes dist-demo/page.html and its files
+```
+
+Setting `EXPO_PUBLIC_DEMO=1` makes Metro swap in `mobile/demo/`:
+
+- an in-browser fake API with the same routes, plan limits and error codes as
+  the backend (it reads limits from `backend/src/plan-limits.ts`)
+- a fake store with instant purchases and a "Skip paywall (demo)" link
+- in-page dialogs
+
+New numbers get a welcome text and a missed call, and a bot answers your
+texts. Data stays in the browser. Normal builds don't include any of this.
+`scripts/package-demo.mjs` makes the output work under any URL path, so it can
+be hosted as a static page.
 
 ## Roadmap
 
@@ -244,7 +282,9 @@ backend/
   src/plans.ts             plan limits and usage metering
   src/subscription.ts      entitlement checks, plan sync, lapsed-number release
   src/billing/             RevenueCat entitlement lookup + webhook auth
-  test/                    end-to-end API and subscription tests (node:test)
+  src/account.ts           account deletion
+  src/telephony/twilio-setup.ts  connection check behind `npm run twilio:check`
+  test/                    end-to-end API, subscription, account and Twilio tests (node:test)
 mobile/
   app/                     screens (expo-router file-based routes)
   src/api.ts               typed API client
@@ -253,4 +293,6 @@ mobile/
   src/subscription.tsx     plan state and paywall routing
   app/paywall.tsx          paywall screen
   src/notifications.ts     push registration
+  app/delete-account.tsx   account deletion screen
+  demo/                    web demo replacements (fake API, store, dialogs)
 ```

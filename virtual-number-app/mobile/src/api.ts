@@ -52,6 +52,7 @@ export const api = {
   me: () => request<User>("GET", "/me"),
   updateMe: (patch: Partial<Pick<User, "forwardTo" | "forwardingEnabled" | "doNotDisturb">>) =>
     request<User>("PATCH", "/me", patch),
+  deleteAccount: (password: string) => request<void>("DELETE", "/me", { password }),
   setPushToken: (pushToken: string | null) => request<void>("PUT", "/me/push-token", { token: pushToken }),
   subscription: () => request<Subscription>("GET", "/subscription"),
   refreshSubscription: () => request<Subscription>("POST", "/subscription/refresh"),

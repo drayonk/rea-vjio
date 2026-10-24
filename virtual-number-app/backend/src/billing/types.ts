@@ -15,4 +15,9 @@ export interface BillingProvider {
   fetchPlan(userId: string): Promise<PlanState>;
   /** Checks that a billing webhook really came from the billing service. */
   verifyWebhook(authorization: string | undefined): boolean;
+  /**
+   * Erases the user's customer record at the billing service. This does not
+   * cancel a store subscription; only the user can do that in their store account.
+   */
+  deleteCustomer(userId: string): Promise<void>;
 }

@@ -16,6 +16,10 @@ class FakeBilling implements BillingProvider {
   verifyWebhook(authorization: string | undefined) {
     return authorization === "Bearer hook-secret";
   }
+  readonly deleted: string[] = [];
+  async deleteCustomer(userId: string) {
+    this.deleted.push(userId);
+  }
 }
 
 describe("subscriptions (paywall on)", () => {

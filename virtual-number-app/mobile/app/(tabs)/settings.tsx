@@ -89,6 +89,7 @@ export default function Settings() {
           ])
         }
       />
+      <Button title="Delete account" variant="secondary" onPress={() => router.push("/delete-account")} />
     </ScrollView>
   );
 }

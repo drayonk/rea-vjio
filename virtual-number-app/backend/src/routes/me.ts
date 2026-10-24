@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { userIdOf } from "../auth.js";
+import { deleteAccount } from "../account.js";
+import { userIdOf, verifyPassword } from "../auth.js";
 import type { Deps } from "../app.js";
 import { publicUser, requireUser } from "../repo.js";
 import { HttpError, e164, handle } from "../validation.js";
@@ -11,7 +12,8 @@ const settings = z.object({
   doNotDisturb: z.boolean().optional(),
 });
 
-export function meRoutes({ db }: Deps) {
+export function meRoutes(deps: Deps) {
+  const { db } = deps;
   const r = Router();
 
   r.get("/", handle((req, res) => res.json(publicUser(requireUser(db, userIdOf(req))))));
@@ -29,6 +31,20 @@ export function meRoutes({ db }: Deps) {
         "UPDATE users SET forward_to = ?, forwarding_enabled = ?, do_not_disturb = ? WHERE id = ?",
       ).run(forwardTo, forwarding ? 1 : 0, (s.doNotDisturb ?? Boolean(user.do_not_disturb)) ? 1 : 0, id);
       res.json(publicUser(requireUser(db, id)));
+    }),
+  );
+
+  /** Store-required in-app account deletion. Re-confirms the password. */
+  r.delete(
+    "/",
+    handle(async (req, res) => {
+      const userId = userIdOf(req);
+      const { password } = z.object({ password: z.string().min(1).max(200) }).parse(req.body);
+      if (!(await verifyPassword(password, requireUser(db, userId).password_hash))) {
+        throw new HttpError(403, "Incorrect password");
+      }
+      await deleteAccount(deps, userId);
+      res.status(204).end();
     }),
   );
 

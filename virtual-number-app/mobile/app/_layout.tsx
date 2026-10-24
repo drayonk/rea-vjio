@@ -34,6 +34,7 @@ function RootStack() {
         <Stack.Screen name="number/[id]/compose" options={{ title: "New message", presentation: "modal" }} />
         <Stack.Screen name="number/[id]/dial" options={{ title: "Call", presentation: "modal" }} />
         <Stack.Screen name="paywall" options={{ title: "", presentation: "modal" }} />
+        <Stack.Screen name="delete-account" options={{ title: "Delete account", presentation: "modal" }} />
       </Stack.Protected>
     </Stack>
   );

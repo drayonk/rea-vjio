@@ -27,6 +27,16 @@ export class RevenueCatBilling implements BillingProvider {
     return planFromEntitlements(body.subscriber.entitlements, new Date());
   }
 
+  async deleteCustomer(userId: string): Promise<void> {
+    const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${this.secretKey}` },
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new ProviderError(`RevenueCat customer deletion failed (${res.status})`, res.status);
+    }
+  }
+
   verifyWebhook(authorization: string | undefined): boolean {
     const expected = Buffer.from(`Bearer ${this.webhookSecret}`);
     const actual = Buffer.from(authorization ?? "");
