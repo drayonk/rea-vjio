@@ -42,7 +42,9 @@ export default function Settings() {
       <Card style={{ gap: spacing(3) }}>
         <Text style={styles.title}>Your real phone</Text>
         <Text style={styles.subtitle}>
-          Used to forward incoming calls and to connect outgoing calls. It is never shown to the people you call.
+          Only needed for calls. It's never shown to anyone: people you call or text see your SecondLine number, and
+          calls only connect after you press 1, so your personal voicemail never answers. Leave it empty if your
+          numbers are texts only.
         </Text>
         <Field
           label="Phone number"

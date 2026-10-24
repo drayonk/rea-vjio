@@ -34,13 +34,14 @@ export interface TelephonyProvider {
     status: string;
   }>;
   /**
-   * Places an outbound call that first rings the user's own phone, then
-   * bridges to the destination showing the virtual number as caller ID.
+   * Rings the user's own phone from the virtual number. When it is answered
+   * the provider fetches instructions from `answerUrl`, which confirms a
+   * person picked up before bridging to the destination.
    */
   bridgeCall(args: {
     virtualNumber: string;
     userPhone: string;
-    destination: string;
+    answerUrl: string;
     statusCallback: string;
   }): Promise<{ providerSid: string; status: string }>;
   /** Verifies a webhook request really came from the provider. */

@@ -53,6 +53,7 @@ export function callRoutes(deps: Deps) {
       const userId = userIdOf(req);
       const n = ownedNumber(db, userId, req.params.numberId!);
       if (!n.voice) throw new HttpError(400, "This number does not support calls");
+      if (!n.calls_enabled) throw new HttpError(400, "Calls are turned off for this number");
       assertAllowed(deps, userId, "call");
       const { to } = z.object({ to: e164 }).parse(req.body);
       const user = getUser(db, userId);
@@ -62,7 +63,7 @@ export function callRoutes(deps: Deps) {
       const call = await telephony.bridgeCall({
         virtualNumber: n.e164,
         userPhone: user.forward_to,
-        destination: to,
+        answerUrl: `${config.publicBaseUrl}/webhooks/voice/bridge`,
         statusCallback: `${config.publicBaseUrl}/webhooks/call-status`,
       });
       const id = randomUUID();

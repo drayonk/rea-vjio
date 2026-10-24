@@ -75,7 +75,7 @@ export default function Numbers() {
             <View style={{ flex: 1, gap: spacing(1) }}>
               <Text style={[styles.title, { fontSize: 18 }]}>{formatPhone(item.e164)}</Text>
               <Text style={styles.subtitle}>
-                {[item.label, item.locality, country.name].filter(Boolean).join(" · ")}
+                {[item.label, item.locality, country.name, !item.callsEnabled && "Texts only"].filter(Boolean).join(" · ")}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.muted} />

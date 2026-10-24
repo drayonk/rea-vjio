@@ -14,6 +14,8 @@ export interface VirtualNumber {
   label: string | null;
   sms: boolean;
   voice: boolean;
+  /** Off = texts only: incoming calls are declined and outgoing calls are blocked. */
+  callsEnabled: boolean;
   createdAt: string;
 }
 

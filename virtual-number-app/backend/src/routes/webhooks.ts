@@ -78,18 +78,28 @@ export function webhookRoutes(deps: Deps) {
       sendXml(res, twiml.response(twiml.say("This number is not in service."), twiml.hangup()));
       return;
     }
+    const callsOn = Boolean(number.calls_enabled);
     db.prepare(
       `INSERT OR IGNORE INTO calls (id, number_id, direction, counterpart, status, provider_sid, created_at)
-       VALUES (?, ?, 'inbound', ?, 'ringing', ?, ?)`,
-    ).run(randomUUID(), number.id, From, CallSid, now());
+       VALUES (?, ?, 'inbound', ?, ?, ?, ?)`,
+    ).run(randomUUID(), number.id, From, callsOn ? "ringing" : "declined", CallSid, now());
+    if (!callsOn) {
+      sendXml(res, twiml.response(twiml.reject()));
+      return;
+    }
 
     const user = getUser(db, number.user_id);
     // Lapsed or over-quota plans fall back to voicemail, which costs no call minutes.
     if (user?.forwarding_enabled && user.forward_to && !user.do_not_disturb && mayForwardCalls(deps, user.id)) {
+      // Screening keeps the user's personal voicemail (often their name) from
+      // answering: unless a person presses 1, the caller gets our voicemail.
       sendXml(
         res,
         twiml.response(
-          twiml.dial(user.forward_to, { action: `${config.publicBaseUrl}/webhooks/voice/after-dial`, timeout: 20 }),
+          twiml.dialScreened(user.forward_to, `${config.publicBaseUrl}/webhooks/voice/screen`, {
+            action: `${config.publicBaseUrl}/webhooks/voice/after-dial`,
+            timeout: 25,
+          }),
         ),
       );
     } else {
@@ -97,9 +107,38 @@ export function webhookRoutes(deps: Deps) {
     }
   });
 
+  /** Played only to the user's phone while the caller keeps hearing ringing. */
+  r.post("/voice/screen", (_req, res) => {
+    sendXml(
+      res,
+      twiml.response(
+        twiml.gather(
+          `${config.publicBaseUrl}/webhooks/voice/screen-result`,
+          twiml.say("Call to your SecondLine number. Press 1 to answer."),
+        ),
+        twiml.hangup(),
+      ),
+    );
+  });
+
+  r.post("/voice/screen-result", (req, res) => {
+    const { ParentCallSid, Digits } = params(req);
+    if (Digits === "1" && ParentCallSid) {
+      db.prepare("UPDATE calls SET status = 'answered' WHERE provider_sid = ?").run(ParentCallSid);
+      sendXml(res, twiml.empty()); // ending the screen connects the caller
+      return;
+    }
+    sendXml(res, twiml.response(twiml.hangup()));
+  });
+
   r.post("/voice/after-dial", (req, res) => {
     const { CallSid, DialCallStatus, DialCallDuration } = params(req);
-    if (DialCallStatus === "completed") {
+    const call = db.prepare("SELECT status FROM calls WHERE provider_sid = ?").get(CallSid ?? "") as
+      | { status: string }
+      | undefined;
+    // Only a screened, accepted leg counts as answered; anything else (incl.
+    // a phone's own voicemail picking up) goes to SecondLine voicemail.
+    if (DialCallStatus === "completed" && call?.status === "answered") {
       db.prepare("UPDATE calls SET status = 'completed', duration_seconds = ? WHERE provider_sid = ?").run(
         Number(DialCallDuration ?? 0),
         CallSid ?? "",
@@ -109,6 +148,41 @@ export function webhookRoutes(deps: Deps) {
     }
     db.prepare("UPDATE calls SET status = 'missed' WHERE provider_sid = ?").run(CallSid ?? "");
     sendXml(res, voicemailPrompt());
+  });
+
+  /**
+   * Outbound bridge, step 1: the user's own phone answered. Require a key
+   * press so a phone voicemail answering never gets connected to the callee.
+   */
+  r.post("/voice/bridge", (_req, res) => {
+    sendXml(
+      res,
+      twiml.response(
+        twiml.gather(
+          `${config.publicBaseUrl}/webhooks/voice/bridge-connect`,
+          twiml.say("SecondLine. Press 1 to place your call."),
+        ),
+        twiml.say("No key pressed. Goodbye."),
+        twiml.hangup(),
+      ),
+    );
+  });
+
+  r.post("/voice/bridge-connect", (req, res) => {
+    const { CallSid, Digits } = params(req);
+    const call = CallSid
+      ? (db
+          .prepare(
+            `SELECT c.counterpart, n.e164, n.calls_enabled FROM calls c JOIN numbers n ON n.id = c.number_id
+             WHERE c.provider_sid = ? AND c.direction = 'outbound' AND n.released_at IS NULL`,
+          )
+          .get(CallSid) as { counterpart: string; e164: string; calls_enabled: number } | undefined)
+      : undefined;
+    if (Digits !== "1" || !call?.calls_enabled) {
+      sendXml(res, twiml.response(twiml.say("Call cancelled."), twiml.hangup()));
+      return;
+    }
+    sendXml(res, twiml.response(twiml.dial(call.counterpart, { callerId: call.e164 })));
   });
 
   r.post("/voicemail", (req, res) => {

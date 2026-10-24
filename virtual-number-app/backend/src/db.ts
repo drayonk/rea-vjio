@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS numbers (
   label TEXT,
   sms INTEGER NOT NULL,
   voice INTEGER NOT NULL,
+  calls_enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   released_at TEXT
 );
@@ -68,6 +69,7 @@ CREATE INDEX IF NOT EXISTS calls_by_number ON calls(number_id, created_at);
 const ADDED_COLUMNS: Array<[table: string, column: string, definition: string]> = [
   ["users", "plan", "TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'premium', 'pro'))"],
   ["users", "plan_expires_at", "TEXT"],
+  ["numbers", "calls_enabled", "INTEGER NOT NULL DEFAULT 1"],
 ];
 
 export function openDb(path: string): Db {

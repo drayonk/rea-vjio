@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { twiml } from "./twiml.js";
 import { ProviderError, type TelephonyProvider } from "./types.js";
 
 const API = "https://api.twilio.com/2010-04-01";
@@ -84,14 +83,11 @@ export class TwilioProvider implements TelephonyProvider {
     return { providerSid: m.sid, status: m.status };
   }
 
-  async bridgeCall(a: { virtualNumber: string; userPhone: string; destination: string; statusCallback: string }) {
+  async bridgeCall(a: { virtualNumber: string; userPhone: string; answerUrl: string; statusCallback: string }) {
     const c = await this.request<{ sid: string; status: string }>("POST", "/Calls.json", {
       To: a.userPhone,
       From: a.virtualNumber,
-      Twiml: twiml.response(
-        twiml.say("Connecting your call."),
-        twiml.dial(a.destination, { callerId: a.virtualNumber }),
-      ),
+      Url: a.answerUrl,
       StatusCallback: a.statusCallback,
       StatusCallbackEvent: "completed",
     });

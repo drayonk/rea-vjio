@@ -15,6 +15,9 @@ export default function Chat() {
   const { id, to } = useLocalSearchParams<{ id: string; to: string }>();
   const insets = useSafeAreaInsets();
   const thread = useLiveQuery(useCallback(() => api.thread(id, to), [id, to]), 5_000);
+  const numbers = useLiveQuery(api.myNumbers, 60_000);
+  const number = numbers.data?.find((n) => n.id === id);
+  const canCall = Boolean(number?.voice && number.callsEnabled);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +50,8 @@ export default function Chat() {
       <Stack.Screen
         options={{
           title: formatPhone(to),
-          headerRight: () => (
+          headerRight: () =>
+            canCall && (
             <Pressable
               hitSlop={12}
               accessibilityLabel="Call"
@@ -55,7 +59,7 @@ export default function Chat() {
             >
               <Ionicons name="call-outline" size={22} color={colors.primary} />
             </Pressable>
-          ),
+            ),
         }}
       />
       <FlatList

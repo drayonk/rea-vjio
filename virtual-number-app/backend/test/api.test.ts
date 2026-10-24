@@ -89,7 +89,10 @@ describe("SecondLine API", () => {
     const me = await call("PATCH", "/api/me", { forwardTo: "+15550001111", forwardingEnabled: true }, token);
     assert.equal(me.body.forwardingEnabled, true);
     const forwarded = await webhook("/voice", { From: "+15559990000", To: e164, CallSid: "CA2" });
-    assert.match(forwarded.text, /<Dial action="[^"]+after-dial" timeout="20">\+15550001111<\/Dial>/);
+    assert.match(
+      forwarded.text,
+      /<Dial action="[^"]+after-dial" timeout="25"><Number url="[^"]+\/voice\/screen">\+15550001111<\/Number><\/Dial>/,
+    );
 
     const missed = await webhook("/voice/after-dial", { CallSid: "CA2", DialCallStatus: "no-answer" });
     assert.match(missed.text, /<Record /);
@@ -111,10 +114,74 @@ describe("SecondLine API", () => {
     assert.match(unknown.text, /not in service/);
   });
 
-  test("bridges outbound calls through the user's phone", async () => {
+  test("forwarded calls connect only after the user presses 1", async () => {
+    const statusOf = async (sid: string) =>
+      (app.deps.db.prepare("SELECT status FROM calls WHERE provider_sid = ?").get(sid) as { status: string }).status;
+
+    // The user's phone voicemail picks up: nobody presses 1, so the caller
+    // never hears the personal greeting and gets SecondLine voicemail instead.
+    await webhook("/voice", { From: "+15559990000", To: e164, CallSid: "CA-vm" });
+    const screen = await webhook("/voice/screen", { CallSid: "CA-child", ParentCallSid: "CA-vm" });
+    assert.match(screen.text, /<Gather numDigits="1"[^>]+screen-result"><Say>[^<]+Press 1/);
+    assert.match(screen.text, /<\/Gather><Hangup\/>/);
+    assert.match((await webhook("/voice/screen-result", { ParentCallSid: "CA-vm" })).text, /<Hangup\/>/);
+    const afterVm = await webhook("/voice/after-dial", { CallSid: "CA-vm", DialCallStatus: "completed", DialCallDuration: "9" });
+    assert.match(afterVm.text, /<Record /);
+    assert.equal(await statusOf("CA-vm"), "missed");
+
+    await webhook("/voice", { From: "+15559990000", To: e164, CallSid: "CA-ok" });
+    const accepted = await webhook("/voice/screen-result", { ParentCallSid: "CA-ok", Digits: "1" });
+    assert.match(accepted.text, /<Response\/>/);
+    const afterOk = await webhook("/voice/after-dial", { CallSid: "CA-ok", DialCallStatus: "completed", DialCallDuration: "42" });
+    assert.match(afterOk.text, /<Hangup\/>/);
+    assert.equal(await statusOf("CA-ok"), "completed");
+  });
+
+  test("bridges outbound calls through the user's phone after a key press", async () => {
     const res = await call("POST", `/api/numbers/${numberId}/calls`, { to: "+15557778888" }, token);
     assert.equal(res.status, 201);
-    assert.deepEqual(telephony.calls.at(-1), { virtualNumber: e164, userPhone: "+15550001111", destination: "+15557778888" });
+    const placed = telephony.calls.at(-1)!;
+    assert.equal(placed.virtualNumber, e164);
+    assert.equal(placed.userPhone, "+15550001111");
+    assert.match(placed.answerUrl, /\/webhooks\/voice\/bridge$/);
+    const { provider_sid: sid } = app.deps.db.prepare("SELECT provider_sid FROM calls WHERE id = ?").get(res.body.id) as {
+      provider_sid: string;
+    };
+
+    const prompt = await webhook("/voice/bridge", { CallSid: sid });
+    assert.match(prompt.text, /<Gather [^>]+bridge-connect"><Say>[^<]+Press 1/);
+    assert.doesNotMatch(prompt.text, /<Dial/);
+    // Personal voicemail answered the bridge leg: the callee is never dialed.
+    assert.match((await webhook("/voice/bridge-connect", { CallSid: sid })).text, /cancelled/);
+    const connect = await webhook("/voice/bridge-connect", { CallSid: sid, Digits: "1" });
+    assert.match(connect.text, new RegExp(`<Dial callerId="\\${e164}">\\+15557778888</Dial>`));
+    assert.doesNotMatch(connect.text, /15550001111/);
+  });
+
+  test("calls can be turned off per number", async () => {
+    const off = await call("PATCH", `/api/numbers/${numberId}`, { callsEnabled: false }, token);
+    assert.equal(off.body.callsEnabled, false);
+    const renamed = await call("PATCH", `/api/numbers/${numberId}`, { label: "Selling" }, token);
+    assert.equal(renamed.body.callsEnabled, false, "a label edit keeps calls off");
+
+    const inbound = await webhook("/voice", { From: "+15550002222", To: e164, CallSid: "CA-off" });
+    assert.match(inbound.text, /<Reject reason="busy"\/>/);
+    assert.doesNotMatch(inbound.text, /<Dial|<Record/);
+    const log = await call("GET", `/api/numbers/${numberId}/calls`, undefined, token);
+    assert.equal(log.body[0].status, "declined");
+
+    const outbound = await call("POST", `/api/numbers/${numberId}/calls`, { to: "+15557778888" }, token);
+    assert.equal(outbound.status, 400);
+    assert.match(outbound.body.error, /turned off/);
+    // A bridge already in flight cannot connect once calls are switched off.
+    const { provider_sid: sid } = app.deps.db
+      .prepare("SELECT provider_sid FROM calls WHERE direction = 'outbound' ORDER BY rowid DESC LIMIT 1")
+      .get() as { provider_sid: string };
+    assert.match((await webhook("/voice/bridge-connect", { CallSid: sid, Digits: "1" })).text, /cancelled/);
+
+    // Texting keeps working.
+    assert.equal((await call("POST", `/api/numbers/${numberId}/messages`, { to: "+15551230000", body: "hi" }, token)).status, 201);
+    assert.equal((await call("PATCH", `/api/numbers/${numberId}`, { callsEnabled: true }, token)).body.callsEnabled, true);
   });
 
   test("releases a number and frees the slot", async () => {

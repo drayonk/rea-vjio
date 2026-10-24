@@ -26,6 +26,24 @@ export default function NumberDetail() {
     Alert.alert(number ? formatPhone(number.e164) : "Number", undefined, [
       { text: "Copy number", onPress: () => number && void Clipboard.setStringAsync(number.e164) },
       { text: "Rename", onPress: () => setRenaming(true) },
+      ...(number?.voice
+        ? [
+            {
+              text: number.callsEnabled ? "Turn off calls" : "Turn on calls",
+              onPress: () =>
+                number.callsEnabled
+                  ? Alert.alert(
+                      "Turn off calls?",
+                      "This number becomes texts only. Callers hear a busy signal, no voicemail is taken, and you can't call out from it.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Turn off", style: "destructive", onPress: () => void setCalls(false) },
+                      ],
+                    )
+                  : void setCalls(true),
+            },
+          ]
+        : []),
       {
         text: "Release number",
         style: "destructive",
@@ -54,6 +72,16 @@ export default function NumberDetail() {
     ]);
 
   const active = tab === "messages" ? conversations : calls;
+  const callsOn = Boolean(number?.voice && number.callsEnabled);
+
+  const setCalls = async (callsEnabled: boolean) => {
+    try {
+      await api.updateNumber(id, { callsEnabled });
+      void numbers.refresh();
+    } catch (err) {
+      Alert.alert("Couldn't update", err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -72,7 +100,7 @@ export default function NumberDetail() {
         initial={number?.label ?? ""}
         onClose={() => setRenaming(false)}
         onSave={async (label) => {
-          await api.renameNumber(id, label || null);
+          await api.updateNumber(id, { label: label || null });
           setRenaming(false);
           void numbers.refresh();
         }}
@@ -81,7 +109,10 @@ export default function NumberDetail() {
         {(["messages", "calls"] as const).map((t) => (
           <Pressable
             key={t}
-            onPress={() => setTab(t)}
+            onPress={() => {
+              setTab(t);
+              void (t === "messages" ? conversations : calls).refresh();
+            }}
             style={{
               flex: 1,
               paddingVertical: spacing(2),
@@ -147,14 +178,26 @@ export default function NumberDetail() {
           refreshControl={<RefreshControl refreshing={calls.refreshing} onRefresh={calls.pullToRefresh} />}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListEmptyComponent={
-            calls.data ? <EmptyState icon="call-outline" title="No calls yet" body="Your call history shows up here." /> : undefined
+            calls.data && callsOn ? (
+              <EmptyState icon="call-outline" title="No calls yet" body="Your call history shows up here." />
+            ) : undefined
           }
-          renderItem={({ item }) => <CallRow numberId={id} call={item} />}
+          ListHeaderComponent={
+            number && !callsOn ? (
+              <EmptyState
+                icon="call-outline"
+                title="Calls are off"
+                body="This number is texts only. Callers hear a busy signal and can't leave voicemail. Declined calls still show below."
+                action={number.voice ? <Button title="Turn on calls" variant="secondary" onPress={() => void setCalls(true)} /> : undefined}
+              />
+            ) : undefined
+          }
+          renderItem={({ item }) => <CallRow numberId={id} call={item} canCall={callsOn} />}
         />
       )}
 
       <View style={{ position: "absolute", right: spacing(5), bottom: spacing(8), gap: spacing(3) }}>
-        {number?.voice && (
+        {callsOn && (
           <Fab icon="keypad" label="Call" onPress={() => router.push({ pathname: "/number/[id]/dial", params: { id } })} />
         )}
         {number?.sms && (
@@ -192,6 +235,8 @@ function Fab(props: { icon: "keypad" | "create"; label: string; onPress: () => v
 
 const CALL_LABELS: Record<string, string> = {
   completed: "Answered",
+  answered: "Answered",
+  declined: "Declined · calls off",
   missed: "Missed",
   voicemail: "Voicemail",
   "no-answer": "No answer",
@@ -203,7 +248,7 @@ const CALL_LABELS: Record<string, string> = {
   "in-progress": "In progress",
 };
 
-function CallRow({ numberId, call }: { numberId: string; call: Call }) {
+function CallRow({ numberId, call, canCall }: { numberId: string; call: Call; canCall: boolean }) {
   const missed = call.direction === "inbound" && (call.status === "missed" || call.status === "voicemail");
   const icon = call.direction === "outbound" ? "arrow-up" : "arrow-down";
   return (
@@ -220,13 +265,15 @@ function CallRow({ numberId, call }: { numberId: string; call: Call }) {
         </View>
         {call.hasVoicemail && <VoicemailPlayer numberId={numberId} call={call} />}
       </View>
-      <Pressable
-        hitSlop={10}
-        accessibilityLabel="Call back"
-        onPress={() => router.push({ pathname: "/number/[id]/dial", params: { id: numberId, to: call.counterpart } })}
-      >
-        <Ionicons name="call-outline" size={22} color={colors.primary} />
-      </Pressable>
+      {canCall && (
+        <Pressable
+          hitSlop={10}
+          accessibilityLabel="Call back"
+          onPress={() => router.push({ pathname: "/number/[id]/dial", params: { id: numberId, to: call.counterpart } })}
+        >
+          <Ionicons name="call-outline" size={22} color={colors.primary} />
+        </Pressable>
+      )}
     </View>
   );
 }

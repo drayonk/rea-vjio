@@ -10,7 +10,7 @@ const DIAL_CODES: Record<string, string> = { US: "1", CA: "1", GB: "44", AU: "61
  */
 export class MockProvider implements TelephonyProvider {
   readonly sent: Array<{ from: string; to: string; body: string }> = [];
-  readonly calls: Array<{ virtualNumber: string; userPhone: string; destination: string }> = [];
+  readonly calls: Array<{ virtualNumber: string; userPhone: string; answerUrl: string }> = [];
   readonly released: string[] = [];
 
   async searchAvailable(q: SearchQuery): Promise<AvailableNumber[]> {
@@ -43,8 +43,8 @@ export class MockProvider implements TelephonyProvider {
     return { providerSid: `SM${randomUUID().replaceAll("-", "")}`, status: "queued" };
   }
 
-  async bridgeCall(a: { virtualNumber: string; userPhone: string; destination: string }) {
-    this.calls.push({ virtualNumber: a.virtualNumber, userPhone: a.userPhone, destination: a.destination });
+  async bridgeCall(a: { virtualNumber: string; userPhone: string; answerUrl: string }) {
+    this.calls.push({ virtualNumber: a.virtualNumber, userPhone: a.userPhone, answerUrl: a.answerUrl });
     return { providerSid: `CA${randomUUID().replaceAll("-", "")}`, status: "queued" };
   }
 

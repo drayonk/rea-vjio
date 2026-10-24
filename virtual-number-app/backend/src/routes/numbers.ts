@@ -80,8 +80,12 @@ export function numberRoutes(deps: Deps) {
     handle((req, res) => {
       const userId = userIdOf(req);
       const n = ownedNumber(db, userId, req.params.id!);
-      const { label } = z.object({ label: z.string().trim().max(40).nullable() }).parse(req.body);
-      db.prepare("UPDATE numbers SET label = ? WHERE id = ?").run(label || null, n.id);
+      const patch = z
+        .object({ label: z.string().trim().max(40).nullable().optional(), callsEnabled: z.boolean().optional() })
+        .parse(req.body);
+      const label = patch.label === undefined ? n.label : patch.label || null;
+      const calls = patch.callsEnabled ?? Boolean(n.calls_enabled);
+      db.prepare("UPDATE numbers SET label = ?, calls_enabled = ? WHERE id = ?").run(label, calls ? 1 : 0, n.id);
       res.json(publicNumber(ownedNumber(db, userId, n.id)));
     }),
   );

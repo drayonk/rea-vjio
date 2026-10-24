@@ -23,6 +23,8 @@ export interface NumberRow {
   label: string | null;
   sms: number;
   voice: number;
+  /** User switch; 0 turns this number into texts only. */
+  calls_enabled: number;
   created_at: string;
 }
 
@@ -54,6 +56,7 @@ export const publicNumber = (n: NumberRow) => ({
   label: n.label,
   sms: Boolean(n.sms),
   voice: Boolean(n.voice),
+  callsEnabled: Boolean(n.calls_enabled),
   createdAt: n.created_at,
 });
 

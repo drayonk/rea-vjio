@@ -16,6 +16,8 @@ dating, travel, business lines, and sign-ups.
 | Do Not Disturb (everything to voicemail, notifications muted)    | ✅     |
 | Push notifications for new texts and voicemails                  | ✅     |
 | Release a number                                                 | ✅     |
+| Turn calls off per number (texts-only number)                    | ✅     |
+| Identity protection: real number never exposed, call screening   | ✅     |
 | Subscriptions (Premium / Pro) with free trial and paywall        | ✅     |
 
 ## Architecture
@@ -46,8 +48,23 @@ dating, travel, business lines, and sign-ups.
   carrier retries never create duplicate messages.
 - **Users only see their own data.** Every API route resolves numbers through
   `ownedNumber(userId, numberId)`.
-- **The real phone stays private.** It is used only to forward calls and to
-  connect bridge calls. Callers never see it.
+- **The user's identity stays hidden.** See "Privacy and identity" below.
+
+## Privacy and identity
+
+| Where identity could leak            | How SecondLine prevents it |
+| ------------------------------------ | -------------------------- |
+| Caller ID on outgoing calls and texts | Always the virtual number. The user's real phone is only rung by our carrier, never dialed out from. |
+| Forwarded incoming calls             | The forwarded leg plays a private "press 1 to answer" prompt. If the user's **personal voicemail** picks up instead, nobody presses 1, so the caller gets SecondLine's generic voicemail and never hears a greeting that might include the user's name or real number. |
+| Outgoing bridge calls                | Same check. The destination is dialed only after the user presses 1, so their own voicemail can never be connected to the other person. |
+| Voicemail greeting                   | Generic, with no name or number. |
+| Texts-only numbers                   | Calls can be turned off per number. Then the real phone isn't needed at all, and incoming calls are declined with a busy signal without being answered (the carrier doesn't bill declined calls). Declined calls still appear in the call log. |
+| Data held by SecondLine              | Only an email and password are needed to sign up. The real phone is optional and only used for calls. |
+
+Not covered: carriers require outgoing calls to carry a valid caller ID, so
+"hide my number" (withheld caller ID) isn't offered. The virtual number is
+always shown. Caller-ID *name* (CNAM) is unset on new numbers by default, so
+displays show the number or its city, never the user's name.
 
 ## Subscriptions
 

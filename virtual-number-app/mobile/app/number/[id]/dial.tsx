@@ -43,6 +43,10 @@ export default function Dial() {
   };
 
   const call = async () => {
+    if (number && !number.callsEnabled) {
+      setError("Calls are turned off for this number. Turn them on from the number's menu.");
+      return;
+    }
     const to = toE164(input, countryByCode(number?.country ?? "US").dial);
     if (!to) {
       setError("Enter a valid phone number");

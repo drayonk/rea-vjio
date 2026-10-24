@@ -65,7 +65,8 @@ export const api = {
   myNumbers: () => request<VirtualNumber[]>("GET", "/numbers"),
   buyNumber: (number: AvailableNumber, label?: string) =>
     request<VirtualNumber>("POST", "/numbers", { ...number, ...(label ? { label } : {}) }),
-  renameNumber: (id: string, label: string | null) => request<VirtualNumber>("PATCH", n(id), { label }),
+  updateNumber: (id: string, patch: { label?: string | null; callsEnabled?: boolean }) =>
+    request<VirtualNumber>("PATCH", n(id), patch),
   releaseNumber: (id: string) => request<void>("DELETE", n(id)),
 
   conversations: (id: string) => request<Conversation[]>("GET", `${n(id)}/conversations`),
