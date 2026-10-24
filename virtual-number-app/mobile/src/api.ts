@@ -1,4 +1,4 @@
-import type { AvailableNumber, Call, Conversation, Message, User, VirtualNumber } from "./types";
+import type { AvailableNumber, Call, Conversation, Message, Subscription, User, VirtualNumber } from "./types";
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -6,6 +6,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Server reason code; "upgrade_required" means the plan doesn't allow it. */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -35,8 +37,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (res.status === 401 && token) onUnauthorized();
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.code);
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
@@ -51,6 +53,8 @@ export const api = {
   updateMe: (patch: Partial<Pick<User, "forwardTo" | "forwardingEnabled" | "doNotDisturb">>) =>
     request<User>("PATCH", "/me", patch),
   setPushToken: (pushToken: string | null) => request<void>("PUT", "/me/push-token", { token: pushToken }),
+  subscription: () => request<Subscription>("GET", "/subscription"),
+  refreshSubscription: () => request<Subscription>("POST", "/subscription/refresh"),
 
   searchNumbers: (q: { country: string; areaCode?: string; contains?: string }) => {
     const params = new URLSearchParams({ country: q.country });

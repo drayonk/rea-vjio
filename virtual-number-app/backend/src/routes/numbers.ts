@@ -5,7 +5,8 @@ import { userIdOf } from "../auth.js";
 import { now } from "../db.js";
 import type { Deps } from "../app.js";
 import { ownedNumber, publicNumber, type NumberRow } from "../repo.js";
-import { HttpError, e164, handle } from "../validation.js";
+import { assertAllowed } from "../subscription.js";
+import { e164, handle } from "../validation.js";
 
 const search = z.object({
   country: z.string().regex(/^[A-Z]{2}$/, "country must be an ISO code like US"),
@@ -23,7 +24,8 @@ const purchase = z.object({
   label: z.string().trim().max(40).optional(),
 });
 
-export function numberRoutes({ db, config, telephony }: Deps) {
+export function numberRoutes(deps: Deps) {
+  const { db, config, telephony } = deps;
   const r = Router();
 
   r.get(
@@ -48,12 +50,7 @@ export function numberRoutes({ db, config, telephony }: Deps) {
     handle(async (req, res) => {
       const userId = userIdOf(req);
       const p = purchase.parse(req.body);
-      const { count } = db
-        .prepare("SELECT COUNT(*) AS count FROM numbers WHERE user_id = ? AND released_at IS NULL")
-        .get(userId) as { count: number };
-      if (count >= config.maxNumbersPerUser) {
-        throw new HttpError(403, `You can have up to ${config.maxNumbersPerUser} numbers`);
-      }
+      assertAllowed(deps, userId, "number");
       const provisioned = await telephony.purchase(p.e164, {
         sms: `${config.publicBaseUrl}/webhooks/sms`,
         voice: `${config.publicBaseUrl}/webhooks/voice`,

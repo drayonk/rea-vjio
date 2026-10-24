@@ -16,7 +16,7 @@ dating, travel, business lines, and sign-ups.
 | Do Not Disturb (everything to voicemail, notifications muted)    | ✅     |
 | Push notifications for new texts and voicemails                  | ✅     |
 | Release a number                                                 | ✅     |
-| Paywall / subscriptions / credits                                | ⏳ not yet decided |
+| Subscriptions (Premium / Pro) with free trial and paywall        | ✅     |
 
 ## Architecture
 
@@ -24,7 +24,10 @@ dating, travel, business lines, and sign-ups.
 ┌──────────────────────┐   HTTPS/JSON   ┌─────────────────────────┐   REST    ┌──────────┐
 │  mobile/ (Expo, RN)  │ ─────────────▶ │ backend/ (Node, Express)│ ────────▶ │  Twilio  │
 │  iOS + Android app   │ ◀── push ───── │  SQLite, auth, routing  │ ◀──────── │ (carrier)│
-└──────────────────────┘   (Expo push)  └─────────────────────────┘  webhooks └──────────┘
+└──────────┬───────────┘   (Expo push)  └────────────▲────────────┘  webhooks └──────────┘
+           │ store purchase                          │ entitlements (REST + webhook)
+           ▼                                         │
+   App Store / Google Play ─────────────────▶   RevenueCat
 ```
 
 - **The carrier does the telephony.** Real phone numbers, SMS delivery, and PSTN
@@ -45,6 +48,83 @@ dating, travel, business lines, and sign-ups.
   `ownedNumber(userId, numberId)`.
 - **The real phone stays private.** It is used only to forward calls and to
   connect bridge calls. Callers never see it.
+
+## Subscriptions
+
+| Plan    | Numbers | Texts / 30 days | Call minutes / 30 days |
+| ------- | ------- | --------------- | ---------------------- |
+| Free    | 0       | 0               | 0                      |
+| Premium | 1       | 1,000           | 300                    |
+| Pro     | 3       | 3,000           | 1,000                  |
+
+The limits are defined in one place, `backend/src/plans.ts`. The paywall
+reads them from the API, so changing a number there updates the app too.
+
+**How it works**
+
+- The app buys through **RevenueCat** (`react-native-purchases`), which handles
+  both App Store and Google Play billing, receipts, trials, renewals, and
+  refunds. The app logs in to RevenueCat with our user id.
+- **The backend decides access, not the app.** It reads the user's
+  entitlements from RevenueCat's REST API when the app calls
+  `POST /api/subscription/refresh` after a purchase, and when RevenueCat sends
+  a webhook to `/billing/revenuecat/webhook`. Webhooks only trigger a re-read,
+  so duplicate or out-of-order events can't leave a wrong plan stored. If an
+  expiry event is ever missed, a stored plan whose end date has passed still
+  counts as free.
+- **Limits are enforced on the server.** Getting a number, sending texts, and
+  placing calls return `402 { code: "upgrade_required" }`, and the app opens
+  the paywall with the reason. Usage is metered over a rolling 30 days.
+  Forwarded inbound calls count toward minutes, and once over quota they go to
+  voicemail.
+- **When a subscription lapses:** outgoing texts and calls stop, incoming calls
+  go to voicemail, and incoming texts are still saved, so renewing restores
+  everything. After `LAPSED_RELEASE_DAYS` (default 7) the numbers are released
+  to stop carrier charges. The app shows a "Renew before…" banner. The billing
+  grace periods of Apple and Google count as active.
+- **Upgrades:** Premium to Pro replaces the subscription instead of stacking
+  a second one. On Android the purchase names the old product; on iOS, put
+  all products in one subscription group.
+
+**Setting it up**
+
+1. In App Store Connect and Google Play Console, create auto-renewing
+   subscriptions named `secondline_<plan>_<period>`, for example
+   `secondline_premium_monthly`, `secondline_premium_annual`,
+   `secondline_pro_monthly`, and `secondline_pro_annual`. On iOS, put them all
+   in **one subscription group**. Add the free trial as an introductory offer
+   (iOS) or a free-trial offer on the base plan (Android). The paywall shows a
+   trial only to users eligible for it.
+2. In RevenueCat, create a project with both apps and import the products.
+   Create the entitlements **`premium`** and **`pro`** and attach the matching
+   products. Add all packages to the **current offering**.
+3. In RevenueCat, go to Integrations > Webhooks, set the URL to
+   `https://<backend>/billing/revenuecat/webhook`, and set the authorization
+   header to `Bearer <REVENUECAT_WEBHOOK_SECRET>`.
+4. In `backend/.env`, set `BILLING_PROVIDER=revenuecat`,
+   `REVENUECAT_SECRET_KEY` (the secret v1 key), and
+   `REVENUECAT_WEBHOOK_SECRET`.
+5. In `mobile/.env`, set `EXPO_PUBLIC_REVENUECAT_IOS_KEY`,
+   `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` (the public SDK keys), and your
+   `EXPO_PUBLIC_TERMS_URL` and `EXPO_PUBLIC_PRIVACY_URL`, which both stores
+   require on subscription paywalls.
+6. Purchases need a development or store build (`npx eas build`). In Expo Go,
+   RevenueCat runs in a preview mode without real purchases. Test with
+   sandbox (iOS) and license-tester (Android) accounts.
+
+With `BILLING_PROVIDER=none` (the default) the paywall is off and every user
+gets Pro limits. That's useful for local development.
+
+> Turn the paywall on from your first public release. If you enable it later,
+> existing users who never subscribed will hit the paywall for new actions.
+
+**Pricing guidance.** Each number costs roughly $1–$2 a month at the carrier,
+plus about $0.008 per SMS segment and $0.01–$0.02 per call minute (US rates;
+check your carrier). A Premium user at full quota costs about $15 a month, so
+set prices from your expected *average* usage rather than the cap. The
+paywall preview used $7.99 monthly or $59.99 yearly for Premium, and $14.99 or
+$119.99 for Pro, each with a 3-day trial on the yearly plan. Those are
+placeholders: prices are set in the stores, not in code.
 
 ## Running locally (no carrier account needed)
 
@@ -130,17 +210,12 @@ npx eas submit
 
 ## Roadmap
 
-- Monetization: paywall, subscriptions, or credits (to be decided; see below)
+- Win-back offers and paywall A/B tests (RevenueCat Experiments)
 - In-app VoIP calling (Twilio Voice SDK, CallKit, ConnectionService)
 - MMS (picture messages)
 - Contacts and block list
 - Custom voicemail greetings
 - Number porting
-
-## Monetization hook
-
-The backend already enforces `MAX_NUMBERS_PER_USER` (default 3). That is where
-plan-based entitlements will plug in if a paywall is added.
 
 ## Project layout
 
@@ -149,10 +224,16 @@ backend/
   src/app.ts               route composition
   src/routes/              auth, me, numbers, messages, calls, webhooks
   src/telephony/           provider interface, Twilio, mock, TwiML builder
-  test/api.test.ts         end-to-end API tests (node:test)
+  src/plans.ts             plan limits and usage metering
+  src/subscription.ts      entitlement checks, plan sync, lapsed-number release
+  src/billing/             RevenueCat entitlement lookup + webhook auth
+  test/                    end-to-end API and subscription tests (node:test)
 mobile/
   app/                     screens (expo-router file-based routes)
   src/api.ts               typed API client
   src/session.tsx          auth state (token in the device keychain)
+  src/billing.ts           RevenueCat purchases, trials, restore
+  src/subscription.tsx     plan state and paywall routing
+  app/paywall.tsx          paywall screen
   src/notifications.ts     push registration
 ```

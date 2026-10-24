@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   forwarding_enabled INTEGER NOT NULL DEFAULT 0,
   do_not_disturb INTEGER NOT NULL DEFAULT 0,
   push_token TEXT,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'premium', 'pro')),
+  plan_expires_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -62,9 +64,21 @@ CREATE TABLE IF NOT EXISTS calls (
 CREATE INDEX IF NOT EXISTS calls_by_number ON calls(number_id, created_at);
 `;
 
+/** Columns added after the first release, for databases created before them. */
+const ADDED_COLUMNS: Array<[table: string, column: string, definition: string]> = [
+  ["users", "plan", "TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'premium', 'pro'))"],
+  ["users", "plan_expires_at", "TEXT"],
+];
+
 export function openDb(path: string): Db {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
+  for (const [table, column, definition] of ADDED_COLUMNS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
   return db;
 }
 

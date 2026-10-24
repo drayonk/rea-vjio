@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Alert, FlatList, Pressable, ScrollView, Text, View } from "react-native";
 import { api } from "@/api";
 import { COUNTRIES, type Country } from "@/countries";
+import { showPaywallFor, useSubscription } from "@/subscription";
 import { formatPhone } from "@/format";
 import { colors, spacing } from "@/theme";
 import type { AvailableNumber } from "@/types";
@@ -17,6 +18,7 @@ export default function GetNumber() {
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
+  const { refresh } = useSubscription();
 
   const search = async () => {
     setSearching(true);
@@ -45,9 +47,11 @@ export default function GetNumber() {
           setBuying(number.e164);
           try {
             const bought = await api.buyNumber(number);
+            void refresh();
             router.dismiss();
             router.push({ pathname: "/number/[id]", params: { id: bought.id } });
           } catch (err) {
+            if (showPaywallFor(err)) return;
             Alert.alert("Couldn't get that number", err instanceof Error ? err.message : String(err));
           } finally {
             setBuying(null);

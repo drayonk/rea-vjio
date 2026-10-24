@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { formatPhone } from "@/format";
 import { useLiveQuery } from "@/hooks";
+import { showPaywallFor } from "@/subscription";
 import { colors, spacing } from "@/theme";
 import type { Message } from "@/types";
 import { ErrorText } from "@/ui";
@@ -28,6 +29,7 @@ export default function Chat() {
       thread.setData((prev) => [...(prev ?? []), message]);
       setDraft("");
     } catch (err) {
+      if (showPaywallFor(err)) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSending(false);

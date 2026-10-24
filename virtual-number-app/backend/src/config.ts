@@ -3,8 +3,12 @@ export interface Config {
   publicBaseUrl: string;
   authSecret: string;
   databasePath: string;
-  maxNumbersPerUser: number;
   telephonyProvider: "mock" | "twilio";
+  billingProvider: "none" | "revenuecat";
+  revenuecatSecretKey: string;
+  revenuecatWebhookSecret: string;
+  /** Days after a subscription lapses before its numbers are released. */
+  lapsedReleaseDays: number;
   twilioAccountSid: string;
   twilioAuthToken: string;
 }
@@ -20,6 +24,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (provider !== "mock" && provider !== "twilio") {
     throw new Error(`TELEPHONY_PROVIDER must be "mock" or "twilio"`);
   }
+  const billing = env.BILLING_PROVIDER ?? "none";
+  if (billing !== "none" && billing !== "revenuecat") {
+    throw new Error(`BILLING_PROVIDER must be "none" or "revenuecat"`);
+  }
   const authSecret = required(env, "AUTH_SECRET");
   if (authSecret.length < 32) {
     throw new Error("AUTH_SECRET must be at least 32 characters");
@@ -29,9 +37,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? "http://localhost:4000").replace(/\/$/, ""),
     authSecret,
     databasePath: env.DATABASE_PATH ?? "./secondline.db",
-    maxNumbersPerUser: Number(env.MAX_NUMBERS_PER_USER ?? 3),
     telephonyProvider: provider,
     twilioAccountSid: provider === "twilio" ? required(env, "TWILIO_ACCOUNT_SID") : "",
     twilioAuthToken: provider === "twilio" ? required(env, "TWILIO_AUTH_TOKEN") : "",
+    billingProvider: billing,
+    revenuecatSecretKey: billing === "revenuecat" ? required(env, "REVENUECAT_SECRET_KEY") : "",
+    revenuecatWebhookSecret: billing === "revenuecat" ? required(env, "REVENUECAT_WEBHOOK_SECRET") : "",
+    lapsedReleaseDays: Number(env.LAPSED_RELEASE_DAYS ?? 7),
   };
 }

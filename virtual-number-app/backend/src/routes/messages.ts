@@ -5,6 +5,7 @@ import { userIdOf } from "../auth.js";
 import { now } from "../db.js";
 import type { Deps } from "../app.js";
 import { ownedNumber } from "../repo.js";
+import { assertAllowed } from "../subscription.js";
 import { HttpError, e164, handle } from "../validation.js";
 
 interface MessageRow {
@@ -30,7 +31,8 @@ const publicMessage = (m: MessageRow) => ({
 const send = z.object({ to: e164, body: z.string().trim().min(1).max(1600) });
 
 /** Mounted at /numbers/:numberId */
-export function messageRoutes({ db, config, telephony }: Deps) {
+export function messageRoutes(deps: Deps) {
+  const { db, config, telephony } = deps;
   const r = Router({ mergeParams: true });
 
   r.get(
@@ -72,8 +74,10 @@ export function messageRoutes({ db, config, telephony }: Deps) {
   r.post(
     "/messages",
     handle(async (req, res) => {
-      const n = ownedNumber(db, userIdOf(req), req.params.numberId!);
+      const userId = userIdOf(req);
+      const n = ownedNumber(db, userId, req.params.numberId!);
       if (!n.sms) throw new HttpError(400, "This number does not support SMS");
+      assertAllowed(deps, userId, "sms");
       const { to, body } = send.parse(req.body);
       if (to === n.e164) throw new HttpError(400, "Cannot message your own number");
       const sent = await telephony.sendSms({

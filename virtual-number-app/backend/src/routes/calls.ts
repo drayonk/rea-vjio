@@ -6,6 +6,7 @@ import { userIdOf } from "../auth.js";
 import { now } from "../db.js";
 import type { Deps } from "../app.js";
 import { getUser, ownedNumber } from "../repo.js";
+import { assertAllowed } from "../subscription.js";
 import { HttpError, e164, handle } from "../validation.js";
 
 interface CallRow {
@@ -31,7 +32,8 @@ const publicCall = (c: CallRow) => ({
 });
 
 /** Mounted at /numbers/:numberId */
-export function callRoutes({ db, config, telephony }: Deps) {
+export function callRoutes(deps: Deps) {
+  const { db, config, telephony } = deps;
   const r = Router({ mergeParams: true });
 
   r.get(
@@ -51,6 +53,7 @@ export function callRoutes({ db, config, telephony }: Deps) {
       const userId = userIdOf(req);
       const n = ownedNumber(db, userId, req.params.numberId!);
       if (!n.voice) throw new HttpError(400, "This number does not support calls");
+      assertAllowed(deps, userId, "call");
       const { to } = z.object({ to: e164 }).parse(req.body);
       const user = getUser(db, userId);
       if (!user?.forward_to) {

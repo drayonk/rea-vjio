@@ -7,6 +7,7 @@ import { countryByCode } from "@/countries";
 import { formatPhone, toE164 } from "@/format";
 import { useLiveQuery } from "@/hooks";
 import { useSession } from "@/session";
+import { showPaywallFor } from "@/subscription";
 import { colors, spacing } from "@/theme";
 import { ErrorText } from "@/ui";
 
@@ -63,6 +64,7 @@ export default function Dial() {
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (err) {
+      if (showPaywallFor(err)) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCalling(false);

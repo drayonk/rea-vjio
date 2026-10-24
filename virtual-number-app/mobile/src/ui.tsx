@@ -151,3 +151,23 @@ export const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: "600", color: colors.text },
   subtitle: { fontSize: 14, color: colors.muted },
 });
+
+/** Set `warn` to false for allowances where being full is normal (e.g. numbers). */
+export function UsageBar(props: { label: string; used: number; limit: number; warn?: boolean }) {
+  const ratio = props.limit > 0 ? Math.min(1, props.used / props.limit) : 1;
+  const warn = props.warn ?? true;
+  const color = !warn ? colors.primary : ratio >= 1 ? colors.danger : ratio >= 0.8 ? "#D97706" : colors.primary;
+  return (
+    <View style={{ gap: spacing(1) }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <Text style={{ fontSize: 14, color: colors.text }}>{props.label}</Text>
+        <Text style={{ fontSize: 14, color: colors.muted }}>
+          {props.used.toLocaleString()} / {props.limit.toLocaleString()}
+        </Text>
+      </View>
+      <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: "hidden" }}>
+        <View style={{ width: `${ratio * 100}%`, height: 6, backgroundColor: color }} />
+      </View>
+    </View>
+  );
+}

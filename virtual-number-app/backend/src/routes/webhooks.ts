@@ -3,6 +3,7 @@ import express, { Router, type NextFunction, type Request, type Response } from 
 import { now } from "../db.js";
 import type { Deps } from "../app.js";
 import { activeNumberByE164, getUser, type NumberRow } from "../repo.js";
+import { mayForwardCalls } from "../subscription.js";
 import { twiml } from "../telephony/twiml.js";
 
 type Params = Record<string, string>;
@@ -11,7 +12,8 @@ const params = (req: Request) => (req.body ?? {}) as Params;
 const sendXml = (res: Response, xml: string) => res.type("text/xml").send(xml);
 
 /** Carrier-facing endpoints. Every request must carry a valid provider signature. */
-export function webhookRoutes({ db, config, telephony, push }: Deps) {
+export function webhookRoutes(deps: Deps) {
+  const { db, config, telephony, push } = deps;
   const r = Router();
   r.use(express.urlencoded({ extended: false }));
   r.use((req: Request, res: Response, next: NextFunction) => {
@@ -82,7 +84,8 @@ export function webhookRoutes({ db, config, telephony, push }: Deps) {
     ).run(randomUUID(), number.id, From, CallSid, now());
 
     const user = getUser(db, number.user_id);
-    if (user?.forwarding_enabled && user.forward_to && !user.do_not_disturb) {
+    // Lapsed or over-quota plans fall back to voicemail, which costs no call minutes.
+    if (user?.forwarding_enabled && user.forward_to && !user.do_not_disturb && mayForwardCalls(deps, user.id)) {
       sendXml(
         res,
         twiml.response(

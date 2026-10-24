@@ -7,6 +7,7 @@ import { spacing } from "@/theme";
 import { Button, ErrorText, Field } from "@/ui";
 import { countryByCode } from "@/countries";
 import { useLiveQuery } from "@/hooks";
+import { showPaywallFor } from "@/subscription";
 
 export default function Compose() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,8 +30,9 @@ export default function Compose() {
       await api.sendSms(id, recipient, body);
       router.replace({ pathname: "/number/[id]/chat", params: { id, to: recipient } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
       setSending(false);
+      if (showPaywallFor(err)) return;
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 

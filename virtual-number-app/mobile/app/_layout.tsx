@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider, useSession } from "@/session";
+import { SubscriptionProvider } from "@/subscription";
 import { colors } from "@/theme";
 
 function RootStack() {
@@ -32,6 +33,7 @@ function RootStack() {
         <Stack.Screen name="number/[id]/chat" options={{ title: "" }} />
         <Stack.Screen name="number/[id]/compose" options={{ title: "New message", presentation: "modal" }} />
         <Stack.Screen name="number/[id]/dial" options={{ title: "Call", presentation: "modal" }} />
+        <Stack.Screen name="paywall" options={{ title: "", presentation: "modal" }} />
       </Stack.Protected>
     </Stack>
   );
@@ -41,8 +43,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <StatusBar style="dark" />
-        <RootStack />
+        <SubscriptionProvider>
+          <StatusBar style="dark" />
+          <RootStack />
+        </SubscriptionProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );

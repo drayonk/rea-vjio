@@ -1,10 +1,13 @@
+import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, ScrollView, Switch, Text, View } from "react-native";
+import { Alert, Linking, ScrollView, Switch, Text, View } from "react-native";
 import { api } from "@/api";
+import * as billing from "@/billing";
 import { formatPhone, toE164 } from "@/format";
 import { useSession } from "@/session";
+import { PLAN_NAMES, useSubscription } from "@/subscription";
 import { colors, spacing } from "@/theme";
-import { Button, Card, ErrorText, Field, styles } from "@/ui";
+import { Button, Card, ErrorText, Field, UsageBar, styles } from "@/ui";
 
 export default function Settings() {
   const { user, setUser, signOut } = useSession();
@@ -35,6 +38,7 @@ export default function Settings() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing(4), gap: spacing(4) }}>
+      <PlanCard />
       <Card style={{ gap: spacing(3) }}>
         <Text style={styles.title}>Your real phone</Text>
         <Text style={styles.subtitle}>
@@ -107,5 +111,58 @@ function ToggleRow(props: {
         trackColor={{ true: colors.primary }}
       />
     </View>
+  );
+}
+
+function PlanCard() {
+  const { subscription: sub, sync } = useSubscription();
+  const [busy, setBusy] = useState(false);
+  if (!sub?.paywallEnabled) return null;
+  const paid = sub.plan !== "free";
+
+  const manage = async () => {
+    const url = await billing.managementUrl().catch(() => null);
+    if (url) void Linking.openURL(url);
+    else Alert.alert("Manage subscription", "Open your App Store or Google Play subscriptions to change or cancel.");
+  };
+
+  const restore = async () => {
+    setBusy(true);
+    try {
+      await billing.restore();
+      const next = await sync();
+      Alert.alert(next.plan === "free" ? "Nothing to restore" : `${PLAN_NAMES[next.plan]} restored`);
+    } catch (err) {
+      Alert.alert("Restore failed", err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card style={{ gap: spacing(3) }}>
+      <View style={styles.row}>
+        <Text style={[styles.title, { flex: 1, fontSize: 18 }]}>{PLAN_NAMES[sub.plan]} plan</Text>
+        {paid && sub.expiresAt && (
+          <Text style={styles.subtitle}>Paid through {new Date(sub.expiresAt).toLocaleDateString()}</Text>
+        )}
+      </View>
+      {paid ? (
+        <>
+          <UsageBar label="Numbers" used={sub.usage.numbers} limit={sub.limits.numbers} warn={false} />
+          <UsageBar label="Texts (30 days)" used={sub.usage.sms} limit={sub.limits.smsPerMonth} />
+          <UsageBar label="Call minutes (30 days)" used={sub.usage.minutes} limit={sub.limits.minutesPerMonth} />
+        </>
+      ) : (
+        <Text style={styles.subtitle}>Subscribe to get a number and start calling and texting.</Text>
+      )}
+      {sub.plan !== "pro" && (
+        <Button title={paid ? "Upgrade to Pro" : "See plans"} onPress={() => router.push("/paywall")} />
+      )}
+      <View style={{ flexDirection: "row", gap: spacing(3) }}>
+        {paid && <Button title="Manage" variant="secondary" onPress={manage} style={{ flex: 1 }} />}
+        <Button title="Restore" variant="secondary" onPress={restore} loading={busy} style={{ flex: 1 }} />
+      </View>
+    </Card>
   );
 }

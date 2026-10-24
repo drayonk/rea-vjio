@@ -9,6 +9,8 @@ export interface UserRow {
   forwarding_enabled: number;
   do_not_disturb: number;
   push_token: string | null;
+  plan: "free" | "premium" | "pro";
+  plan_expires_at: string | null;
 }
 
 export interface NumberRow {
@@ -26,6 +28,12 @@ export interface NumberRow {
 
 export const getUser = (db: Db, id: string) =>
   db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+
+export function requireUser(db: Db, id: string): UserRow {
+  const user = getUser(db, id);
+  if (!user) throw new HttpError(404, "user not found");
+  return user;
+}
 
 export function ownedNumber(db: Db, userId: string, numberId: string): NumberRow {
   const row = db

@@ -43,6 +43,25 @@ export interface Conversation {
   last: Message;
 }
 
+export type PlanId = "free" | "premium" | "pro";
+
+export interface PlanLimits {
+  numbers: number;
+  smsPerMonth: number;
+  minutesPerMonth: number;
+}
+
+export interface Subscription {
+  paywallEnabled: boolean;
+  plan: PlanId;
+  expiresAt: string | null;
+  /** Set when the subscription lapsed: the numbers are released at this time. */
+  releaseAt: string | null;
+  limits: PlanLimits;
+  usage: { numbers: number; sms: number; minutes: number };
+  plans: { premium: PlanLimits; pro: PlanLimits };
+}
+
 export interface Call {
   id: string;
   direction: "inbound" | "outbound";

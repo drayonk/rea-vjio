@@ -1,56 +1,23 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import type { AddressInfo } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { createApp } from "../src/app.js";
-import { loadConfig } from "../src/config.js";
-import { openDb } from "../src/db.js";
-import type { PushMessage } from "../src/push.js";
-import { MockProvider } from "../src/telephony/mock.js";
 import { TwilioProvider } from "../src/telephony/twilio.js";
+import { startApp, type TestApp } from "./helpers.js";
 
-const telephony = new MockProvider();
-const pushes: PushMessage[] = [];
+let app: TestApp;
+let telephony: TestApp["telephony"];
+let pushes: TestApp["pushes"];
 let base = "";
-let close: () => void;
+let call: TestApp["call"];
+let webhook: TestApp["webhook"];
 
 before(async () => {
-  const config = loadConfig({ AUTH_SECRET: "x".repeat(32), MAX_NUMBERS_PER_USER: "2" });
-  const app = createApp({ config, db: openDb(":memory:"), telephony, push: async (m) => void pushes.push(m) });
-  const server = app.listen(0);
-  await new Promise((r) => server.once("listening", r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  close = () => server.close();
+  app = await startApp();
+  ({ telephony, pushes, base, call, webhook } = app);
 });
-after(() => close());
+after(() => app.close());
 
-async function call(method: string, path: string, body?: unknown, token?: string) {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = await res.text();
-  return { status: res.status, body: text && res.headers.get("content-type")?.includes("json") ? JSON.parse(text) : text };
-}
-
-const webhook = async (path: string, form: Record<string, string>) => {
-  const res = await fetch(`${base}/webhooks${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(form).toString(),
-  });
-  return { status: res.status, text: await res.text() };
-};
-
-async function signup(email: string) {
-  const res = await call("POST", "/api/auth/register", { email, password: "correct horse" });
-  assert.equal(res.status, 201);
-  return res.body.token as string;
-}
+const signup = async (email: string) => (await app.signup(email)).token;
 
 describe("SecondLine API", () => {
   let token = "";
@@ -65,19 +32,23 @@ describe("SecondLine API", () => {
     assert.equal((await call("GET", "/api/numbers")).status, 401);
   });
 
-  test("searches and buys a number, enforcing the per-user limit", async () => {
-    const found = await call("GET", "/api/numbers/available?country=US&areaCode=212&limit=3", undefined, token);
+  test("searches and buys numbers up to the plan limit (Pro when the paywall is off)", async () => {
+    assert.equal((await call("GET", "/api/subscription", undefined, token)).body.paywallEnabled, false);
+    const found = await call("GET", "/api/numbers/available?country=US&areaCode=212&limit=4", undefined, token);
     assert.equal(found.status, 200);
-    assert.equal(found.body.length, 3);
-    const [first, second, third] = found.body;
+    assert.equal(found.body.length, 4);
+    const [first, second, third, fourth] = found.body;
     const bought = await call("POST", "/api/numbers", { ...first, label: "Work" }, token);
     assert.equal(bought.status, 201);
     assert.equal(bought.body.label, "Work");
     numberId = bought.body.id;
     e164 = bought.body.e164;
     assert.equal((await call("POST", "/api/numbers", second, token)).status, 201);
-    assert.equal((await call("POST", "/api/numbers", third, token)).status, 403);
-    assert.equal((await call("GET", "/api/numbers", undefined, token)).body.length, 2);
+    assert.equal((await call("POST", "/api/numbers", third, token)).status, 201);
+    const overLimit = await call("POST", "/api/numbers", fourth, token);
+    assert.equal(overLimit.status, 402);
+    assert.equal(overLimit.body.code, "upgrade_required");
+    assert.equal((await call("GET", "/api/numbers", undefined, token)).body.length, 3);
   });
 
   test("hides numbers from other users", async () => {
@@ -149,7 +120,7 @@ describe("SecondLine API", () => {
   test("releases a number and frees the slot", async () => {
     assert.equal((await call("DELETE", `/api/numbers/${numberId}`, undefined, token)).status, 204);
     assert.equal(telephony.released.length, 1);
-    assert.equal((await call("GET", "/api/numbers", undefined, token)).body.length, 1);
+    assert.equal((await call("GET", "/api/numbers", undefined, token)).body.length, 2);
     const inbound = await webhook("/voice", { From: "+15559990000", To: e164, CallSid: "CA4" });
     assert.match(inbound.text, /not in service/);
   });
